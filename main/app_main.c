@@ -5,6 +5,7 @@
 #include "esp_flash.h"
 #include "esp_log.h"
 #include "esp_psram.h"
+#include "lvgl.h"
 
 static const char *TAG = "recorder";
 
@@ -35,4 +36,27 @@ void app_main(void)
     ESP_LOGI(TAG, "display=%dx%d", BSP_LCD_H_RES, BSP_LCD_V_RES);
     ESP_LOGI(TAG, "audio=%d sdcard=%d touch=%d",
              BSP_CAPS_AUDIO, BSP_CAPS_SDCARD, BSP_CAPS_TOUCH);
+
+    lv_display_t *display = bsp_display_start();
+    if (display == NULL) {
+        ESP_LOGE(TAG, "display initialization failed");
+        ESP_ERROR_CHECK(ESP_FAIL);
+    }
+
+    if (!bsp_display_lock(0)) {
+        ESP_LOGE(TAG, "failed to lock display");
+        ESP_ERROR_CHECK(ESP_FAIL);
+    }
+
+    lv_obj_t *screen = lv_screen_active();
+    lv_obj_set_style_bg_color(screen, lv_color_hex(0x05070A), LV_PART_MAIN);
+
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "RECORDER READY\nV2");
+    lv_obj_set_style_text_color(title, lv_color_hex(0x4ADE80), LV_PART_MAIN);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_center(title);
+
+    bsp_display_unlock();
+    ESP_ERROR_CHECK(bsp_display_backlight_on());
 }
