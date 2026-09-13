@@ -24,6 +24,13 @@
 - Zero samples:
 - Listening notes:
 
+## WAV writer validation
+
+- Board tests: 4 tests, 0 failures, 0 ignored
+- Format: PCM signed 16-bit little-endian, 16000 Hz, mono
+- One-second repair header: PASS (32000 PCM bytes)
+- ffprobe: unavailable on development machine
+
 ## Ten-minute recording
 
 - Result:
