@@ -1,1 +1,6 @@
-idf_component_register(SRCS "recorder_board.c" INCLUDE_DIRS "include")
+if(NOT CONFIG_RECORDER_BOARD_HARDWARE)
+    idf_component_register(SRCS "recorder_board.c" INCLUDE_DIRS "include")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE RECORDER_BOARD_TEST=1)
+else()
+    idf_component_register(INCLUDE_DIRS "include")
+endif()

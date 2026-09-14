@@ -18,11 +18,24 @@
 
 ## Audio diagnostic
 
-- Result:
-- Peak sample:
-- Clipped samples:
-- Zero samples:
-- Listening notes:
+- Date: 2026-09-13
+- COM port: COM11
+- Result: PASS (capture, finalize, rename, and on-device size check)
+- Format: PCM signed 16-bit little-endian, 16000 Hz, mono, 5 seconds
+- Samples: 80000
+- PCM bytes: 160000
+- WAV bytes: 160044
+- Peak sample: 32767
+- Clipped samples: 26
+- Zero samples: 188
+- Listening notes: pending manual playback after copying `diagnostic.wav` from microSD
+
+## Board adapters and button classifier
+
+- Microphone validation: 2 tests, 0 failures, 0 ignored
+- Button boundaries: 4 tests, 0 failures, 0 ignored
+- PWR input adapter: pending board-level probing; BSP 2.0.3 reports
+  `BSP_CAPS_BUTTONS=0` and exports no PWR input pin, so no GPIO was guessed.
 
 ## WAV writer validation
 

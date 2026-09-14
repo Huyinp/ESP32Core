@@ -1,0 +1,7 @@
+menu "Recorder board"
+
+config RECORDER_BOARD_HARDWARE
+    bool "Enable V2 board hardware adapters"
+    default n
+
+endmenu
