@@ -33,9 +33,12 @@
 ## Board adapters and button classifier
 
 - Microphone validation: 2 tests, 0 failures, 0 ignored
-- Button boundaries: 4 tests, 0 failures, 0 ignored
-- PWR input adapter: pending board-level probing; BSP 2.0.3 reports
-  `BSP_CAPS_BUTTONS=0` and exports no PWR input pin, so no GPIO was guessed.
+- Button boundaries and PWR edge tracker: 7 tests, 0 failures, 0 ignored
+- PWR input adapter: PASS on 2026-09-14, COM11. The PWR key is read through
+  AXP2101 (I2C address `0x34`) PKEY edge status polling; no ESP32 GPIO is
+  reconfigured. Press produced status `0x8e`, release produced `0x8d`.
+- Classification evidence: 520 ms, 240 ms, and 640 ms presses were short;
+  a 2160 ms press was long. Firmware remained running after the events.
 
 ## WAV writer validation
 

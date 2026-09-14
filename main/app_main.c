@@ -26,6 +26,13 @@ typedef struct {
 
 static diagnostic_task_context_t diagnostic_context;
 
+static void button_probe(button_action_t action, void *context)
+{
+    (void)context;
+    ESP_LOGI(TAG, "PWR probe classified action=%s",
+             action == BUTTON_ACTION_SHORT_PRESS ? "short" : "long");
+}
+
 static bool diagnostic_requested(void)
 {
     const gpio_config_t config = {
@@ -158,6 +165,14 @@ void app_main(void)
     ESP_LOGI(TAG, "display=%dx%d", BSP_LCD_H_RES, BSP_LCD_V_RES);
     ESP_LOGI(TAG, "audio=%d sdcard=%d touch=%d",
              BSP_CAPS_AUDIO, BSP_CAPS_SDCARD, BSP_CAPS_TOUCH);
+
+    esp_err_t button_error = recorder_board_init();
+    if (button_error == ESP_OK) {
+        button_error = recorder_board_register_button(button_probe, NULL);
+    }
+    if (button_error != ESP_OK) {
+        ESP_LOGE(TAG, "PWR probe unavailable: %s", esp_err_to_name(button_error));
+    }
 
     if (diagnostic_requested()) {
         ESP_LOGI(TAG, "BOOT held: starting five-second microphone diagnostic");
