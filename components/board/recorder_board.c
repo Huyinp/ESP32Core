@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "recorder_board.h"
+#include "recorder_board_internal.h"
 
 #ifndef RECORDER_BOARD_TEST
 #include "bsp/esp-bsp.h"
@@ -12,6 +13,23 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#endif
+
+esp_err_t recorder_board_configure_mic_gain(void *codec,
+                                            recorder_codec_set_gain_fn set_gain)
+{
+    if (codec == NULL || set_gain == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    return set_gain(codec, 36.0f) == 0 ? ESP_OK : ESP_FAIL;
+}
+
+#ifndef RECORDER_BOARD_TEST
+static int codec_set_input_gain(void *codec, float gain_db)
+{
+    return esp_codec_dev_set_in_gain((esp_codec_dev_handle_t)codec, gain_db);
+}
 #endif
 
 button_action_t button_classify(uint32_t held_ms)
@@ -228,7 +246,8 @@ esp_err_t recorder_board_open_mic(recorder_audio_source_t *out, uint32_t rate_hz
     if (esp_codec_dev_open(microphone_codec, &format) != 0) {
         return ESP_FAIL;
     }
-    if (esp_codec_dev_set_in_gain(microphone_codec, 30.0f) != 0) {
+    if (recorder_board_configure_mic_gain(microphone_codec,
+                                          codec_set_input_gain) != ESP_OK) {
         esp_codec_dev_close(microphone_codec);
         return ESP_FAIL;
     }

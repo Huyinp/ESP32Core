@@ -1,6 +1,16 @@
 #include "unity.h"
 
 #include "recorder_board.h"
+#include "../recorder_board_internal.h"
+
+static float requested_gain_db;
+
+static int capture_gain(void *codec, float gain_db)
+{
+    TEST_ASSERT_NOT_NULL(codec);
+    requested_gain_db = gain_db;
+    return 0;
+}
 
 TEST_CASE("button ignores 49 milliseconds", "[button]")
 {
@@ -60,4 +70,13 @@ TEST_CASE("microphone rejects an unsupported rate", "[board]")
 {
     recorder_audio_source_t source = {0};
     TEST_ASSERT_EQUAL(ESP_ERR_NOT_SUPPORTED, recorder_board_open_mic(&source, 8000));
+}
+
+TEST_CASE("microphone configuration requests 36 dB input gain", "[board]")
+{
+    requested_gain_db = 0.0f;
+
+    TEST_ASSERT_EQUAL(ESP_OK,
+                      recorder_board_configure_mic_gain((void *)1, capture_gain));
+    TEST_ASSERT_EQUAL_FLOAT(36.0f, requested_gain_db);
 }

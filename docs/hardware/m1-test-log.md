@@ -56,6 +56,16 @@
 - Dropped buffers:
 - File verification:
 
+## Microphone gain tuning
+
+- Date: 2026-09-14
+- Input gain: raised from 30 dB to 36 dB
+- Board test: 3 tests, 0 failures, 0 ignored
+- Product and test firmware builds: PASS
+- Product firmware flashed to COM11: PASS
+- Listening comparison: deferred; the gain value is verified, but subjective
+  loudness and clipping have not yet been re-evaluated.
+
 ## Recorder coordinator and status UI
 
 - Full firmware suite: 30 tests, 0 failures, 0 ignored
