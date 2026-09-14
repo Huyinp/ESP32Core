@@ -53,6 +53,7 @@ static const char *TAG = "recorder_board";
 static i2c_master_dev_handle_t button_pmu;
 static recorder_button_cb_t button_callback;
 static void *button_callback_context;
+static esp_codec_dev_handle_t microphone_codec;
 
 static esp_err_t pmu_read(uint8_t reg, uint8_t *value)
 {
@@ -213,23 +214,25 @@ esp_err_t recorder_board_open_mic(recorder_audio_source_t *out, uint32_t rate_hz
     if (error != ESP_OK) {
         return error;
     }
-    esp_codec_dev_handle_t codec = bsp_audio_codec_microphone_init();
-    if (codec == NULL) {
-        return ESP_FAIL;
+    if (microphone_codec == NULL) {
+        microphone_codec = bsp_audio_codec_microphone_init();
+        if (microphone_codec == NULL) {
+            return ESP_FAIL;
+        }
     }
     esp_codec_dev_sample_info_t format = {
         .sample_rate = rate_hz,
         .channel = 1,
         .bits_per_sample = 16,
     };
-    if (esp_codec_dev_open(codec, &format) != 0) {
+    if (esp_codec_dev_open(microphone_codec, &format) != 0) {
         return ESP_FAIL;
     }
-    if (esp_codec_dev_set_in_gain(codec, 30.0f) != 0) {
-        esp_codec_dev_close(codec);
+    if (esp_codec_dev_set_in_gain(microphone_codec, 30.0f) != 0) {
+        esp_codec_dev_close(microphone_codec);
         return ESP_FAIL;
     }
-    out->codec = codec;
+    out->codec = microphone_codec;
     out->open = true;
     return ESP_OK;
 #endif

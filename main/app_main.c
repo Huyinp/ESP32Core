@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -14,7 +15,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lvgl.h"
+#include "recorder.h"
 #include "recorder_board.h"
+#include "recorder_ui_model.h"
 #include "recording_store.h"
 
 static const char *TAG = "recorder";
@@ -26,11 +29,138 @@ typedef struct {
 
 static diagnostic_task_context_t diagnostic_context;
 
-static void button_probe(button_action_t action, void *context)
+typedef struct {
+    const char *mount_path;
+    uint32_t sequence;
+    recorder_audio_source_t source;
+    recording_store_t store;
+} recorder_runtime_t;
+
+static recorder_runtime_t recorder_runtime;
+static recorder_failure_t recorder_failure;
+static lv_obj_t *status_label;
+static lv_obj_t *detail_label;
+
+static esp_err_t runtime_storage_begin(void *context, recording_mode_t mode,
+                                       char *id, size_t id_size)
+{
+    (void)mode;
+    recorder_runtime_t *runtime = context;
+    recorder_failure = RECORDER_FAILURE_STORAGE;
+    const recording_clock_t clock = {
+        .boot_count = 0,
+        .sequence = ++runtime->sequence,
+    };
+    const wav_format_t format = {
+        .sample_rate_hz = 16000,
+        .bits_per_sample = 16,
+        .channels = 1,
+    };
+    esp_err_t error = recording_store_begin(&runtime->store, runtime->mount_path,
+                                            &clock, format);
+    if (error == ESP_OK) {
+        recorder_failure = RECORDER_FAILURE_NONE;
+        const char *name = strrchr(runtime->store.final_path, '/');
+        snprintf(id, id_size, "%s", name == NULL ? runtime->store.final_path : name + 1);
+    } else {
+        ESP_LOGE(TAG, "SD begin failed: %s errno=%d (%s) path=%s",
+                 esp_err_to_name(error), errno, strerror(errno),
+                 runtime->store.temp_path);
+    }
+    return error;
+}
+
+static esp_err_t runtime_audio_open(void *context)
+{
+    recorder_runtime_t *runtime = context;
+    const esp_err_t error = recorder_board_open_mic(&runtime->source, 16000);
+    if (error != ESP_OK) {
+        recorder_failure = RECORDER_FAILURE_AUDIO;
+    }
+    return error;
+}
+
+static esp_err_t runtime_audio_read(void *context, int16_t *samples,
+                                    size_t capacity, size_t *read)
+{
+    recorder_runtime_t *runtime = context;
+    const esp_err_t error = recorder_audio_read(&runtime->source, samples, capacity, read);
+    if (error != ESP_OK) {
+        recorder_failure = RECORDER_FAILURE_AUDIO;
+        ESP_LOGE(TAG, "microphone read failed: %s", esp_err_to_name(error));
+    }
+    return error;
+}
+
+static esp_err_t runtime_storage_append(void *context, const void *pcm, size_t bytes)
+{
+    recorder_runtime_t *runtime = context;
+    const esp_err_t error = recording_store_append(&runtime->store, pcm, bytes);
+    if (error != ESP_OK) {
+        recorder_failure = RECORDER_FAILURE_STORAGE;
+        ESP_LOGE(TAG, "SD append failed: %s bytes_written=%" PRIu32,
+                 esp_err_to_name(error), runtime->store.pcm_bytes);
+    }
+    return error;
+}
+
+static esp_err_t runtime_audio_close(void *context)
+{
+    recorder_runtime_t *runtime = context;
+    return recorder_audio_close(&runtime->source);
+}
+
+static esp_err_t runtime_storage_commit(void *context)
+{
+    recorder_runtime_t *runtime = context;
+    const esp_err_t error = recording_store_commit(&runtime->store, NULL);
+    if (error != ESP_OK) {
+        recorder_failure = RECORDER_FAILURE_STORAGE;
+    }
+    return error;
+}
+
+static void recorder_ui_refresh(lv_timer_t *timer)
+{
+    (void)timer;
+    const recorder_snapshot_t snapshot = recorder_get_snapshot();
+    const recorder_ui_view_t view = recorder_ui_model(&snapshot, recorder_failure);
+    lv_label_set_text(status_label, view.status);
+    lv_obj_set_style_text_color(status_label, lv_color_hex(view.color_rgb), LV_PART_MAIN);
+    lv_label_set_text(detail_label, view.detail);
+    lv_obj_set_style_text_color(detail_label, lv_color_hex(view.color_rgb), LV_PART_MAIN);
+}
+
+static void recorder_observer(const recorder_snapshot_t *snapshot, void *context)
 {
     (void)context;
-    ESP_LOGI(TAG, "PWR probe classified action=%s",
-             action == BUTTON_ACTION_SHORT_PRESS ? "short" : "long");
+    ESP_LOGI(TAG, "recording state=%d elapsed=%" PRIu32 "ms bytes=%" PRIu32
+             " error=%s id=%s", snapshot->state, snapshot->elapsed_ms,
+             snapshot->pcm_bytes, esp_err_to_name(snapshot->last_error),
+             snapshot->active_recording_id);
+}
+
+static void recorder_button(button_action_t action, void *context)
+{
+    (void)context;
+    if (action == BUTTON_ACTION_LONG_PRESS) {
+        ESP_LOGI(TAG, "PWR long press: shutdown is not enabled yet");
+        return;
+    }
+    const recorder_snapshot_t snapshot = recorder_get_snapshot();
+    esp_err_t error;
+    if (snapshot.state == RECORDER_IDLE || snapshot.state == RECORDER_STORED) {
+        error = recorder_request_start(RECORDING_MODE_MEETING);
+    } else if (snapshot.state == RECORDER_RECORDING) {
+        error = recorder_request_stop();
+    } else {
+        error = ESP_ERR_INVALID_STATE;
+    }
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "PWR recording command failed: %s state=%d last_error=%s",
+                 esp_err_to_name(error), snapshot.state,
+                 esp_err_to_name(snapshot.last_error));
+    }
 }
 
 static bool diagnostic_requested(void)
@@ -166,17 +296,29 @@ void app_main(void)
     ESP_LOGI(TAG, "audio=%d sdcard=%d touch=%d",
              BSP_CAPS_AUDIO, BSP_CAPS_SDCARD, BSP_CAPS_TOUCH);
 
-    esp_err_t button_error = recorder_board_init();
-    if (button_error == ESP_OK) {
-        button_error = recorder_board_register_button(button_probe, NULL);
-    }
-    if (button_error != ESP_OK) {
-        ESP_LOGE(TAG, "PWR probe unavailable: %s", esp_err_to_name(button_error));
-    }
-
     if (diagnostic_requested()) {
         ESP_LOGI(TAG, "BOOT held: starting five-second microphone diagnostic");
         ESP_ERROR_CHECK(run_diagnostic_task());
+    } else {
+        ESP_ERROR_CHECK(recorder_board_init());
+        ESP_ERROR_CHECK(recorder_board_mount_sd(&recorder_runtime.mount_path));
+        recorder_runtime.sequence = esp_random();
+        recovery_report_t recovery = {0};
+        ESP_ERROR_CHECK(recording_store_recover_all(recorder_runtime.mount_path, &recovery));
+        ESP_LOGI(TAG, "storage recovery repaired=%" PRIu32 " corrupt=%" PRIu32,
+                 recovery.repaired, recovery.corrupt);
+        const recorder_config_t recorder_config = {
+            .ctx = &recorder_runtime,
+            .storage_begin = runtime_storage_begin,
+            .audio_open = runtime_audio_open,
+            .audio_read = runtime_audio_read,
+            .storage_append = runtime_storage_append,
+            .audio_close = runtime_audio_close,
+            .storage_commit = runtime_storage_commit,
+            .observer = recorder_observer,
+        };
+        ESP_ERROR_CHECK(recorder_init(&recorder_config));
+        ESP_ERROR_CHECK(recorder_board_register_button(recorder_button, NULL));
     }
 
     lv_display_t *display = bsp_display_start();
@@ -193,11 +335,16 @@ void app_main(void)
     lv_obj_t *screen = lv_screen_active();
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x05070A), LV_PART_MAIN);
 
-    lv_obj_t *title = lv_label_create(screen);
-    lv_label_set_text(title, "RECORDER READY\nV2");
-    lv_obj_set_style_text_color(title, lv_color_hex(0x4ADE80), LV_PART_MAIN);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_center(title);
+    status_label = lv_label_create(screen);
+    lv_obj_set_style_text_align(status_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_align(status_label, LV_ALIGN_CENTER, 0, -18);
+
+    detail_label = lv_label_create(screen);
+    lv_obj_set_style_text_align(detail_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_align(detail_label, LV_ALIGN_CENTER, 0, 18);
+
+    recorder_ui_refresh(NULL);
+    lv_timer_create(recorder_ui_refresh, 250, NULL);
 
     bsp_display_unlock();
     ESP_ERROR_CHECK(bsp_display_backlight_on());

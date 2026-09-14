@@ -49,10 +49,26 @@
 
 ## Ten-minute recording
 
-- Result:
-- Duration:
+- Result: BLOCKED by full microSD; the attempted run never entered capture.
+- Evidence: `recording_store_begin` returned `errno=28 (No space left on device)`
+  and the screen displayed `SD ERROR`.
+- Duration: 0 ms
 - Dropped buffers:
 - File verification:
+
+## Recorder coordinator and status UI
+
+- Full firmware suite: 30 tests, 0 failures, 0 ignored
+- Recorder coordinator: 2 tests, 0 failures, 0 ignored
+- UI state model: 2 tests, 0 failures, 0 ignored
+- Date: 2026-09-14
+- COM port: COM11
+- Cleared-card smoke test: PASS
+- Screen evidence: `READY` before capture, red `REC` with elapsed time during
+  capture, and `SAVED` after finalization.
+- Serial evidence: 12032 ms, 385024 PCM bytes, `ESP_OK`, state sequence
+  preparing/recording/finalizing/stored, file
+  `boot-00000000-2261221567.wav`.
 
 ## Power-loss recovery
 
